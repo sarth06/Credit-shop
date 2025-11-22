@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Credit Shop Manager — Cloud</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+  .container { max-width: 1000px; margin: auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+  h2 { margin-top: 30px; }
+  input, select, textarea { padding: 8px; margin: 5px 0; width: 100%; box-sizing: border-box; }
+  button { padding: 8px 12px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; }
+  button:hover { background: #0056b3; }
+  table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+  table, th, td { border: 1px solid #ccc; }
+  th, td { padding: 10px; text-align: left; vertical-align: top; }
+  .paid { color: green; font-weight: bold; }
+  .unpaid { color: red; font-weight: bold; }
+  .small { padding: 5px 8px; font-size: 90%; }
+  .muted { color: #777; font-size: 0.9em; }
+  .top-row { display:flex; gap:10px; align-items:center; }
+  .top-row > * { flex:1; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Credit Shop Manager — Cloud (Firestore)</h1>
+
+  <h2>Add Customer Purchase</h2>
+  <label>Customer Name</label>
+  <input id="name" placeholder="Enter customer name" />
+
+  <label>Items Purchased</label>
+  <div style="display:flex; gap:10px;">
+    <input id="itemName" placeholder="Item name" />
+    <input id="itemPrice" type="number" placeholder="Price" />
+    <button class="small" id="btnAddItem">Add</button>
+  </div>
+  <div id="itemsList" class="muted">No items added yet.</div>
+
+  <label>Date & Time</label>
+  <input id="datetime" type="datetime-local" />
+
+  <label>Phone Number (India)</label>
+  <input id="phone" placeholder="9876543210" />
+
+  <label>Address (optional)</label>
+  <input id="address" placeholder="Address" />
+
+  <label>Status</label>
+  <select id="status">
+    <option value="unpaid">Unpaid</option>
+    <option value="paid">Paid</option>
+  </select>
+
+  <button id="btnAddRecord">Save to Cloud</button>
+
+  <h2>Filters & Search</h2>
+  <div class="top-row">
+    <div>
+      <button class="small" onclick="setFilter('all')">All</button>
+      <button class="small" onclick="setFilter('paid')">Paid</button>
+      <button class="small" onclick="setFilter('unpaid')">Unpaid</button>
+    </div>
+    <input id="search" placeholder="Search name..." oninput="renderTable()" />
+  </div>
+
+  <h2>Records (saved to Firestore)</h2>
+  <table>
+    <thead><tr><th>Name</th><th>Items</th><th>Total</th><th>Date</th><th>Phone</th><th>Address</th><th>Status</th><th>Actions</th></tr></thead>
+    <tbody id="tableBody"></tbody>
+  </table>
+
+  <h2>Auto Message Template</h2>
+  <textarea id="autoMsg" style="width:100%;height:120px;">Dear {name}, this is a reminder for your purchase: {items}. Date: {date} {time}. Total: ₹{total}. Please clear dues. Thank you!</textarea>
+  <label><input type="checkbox" id="autoSend"> Auto-open SMS when saving (mobile only)</label>
+
+  <h3>Notes</h3>
+  <ul>
+    <li>Data is synced to Firebase Firestore (cloud). Do not share the project config publicly.</li>
+    <li>Test SMS/WhatsApp actions on a real mobile device.</li>
+  </ul>
+</div>
+
+<script type="module">
+import {{ initializeApp }} from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+import {{ getFirestore, collection, addDoc, doc, updateDoc, deleteDoc, onSnapshot, query, orderBy, serverTimestamp, getDoc, getDocs, where }} from "https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore.js";
+
+const firebaseConfig = {"apiKey": "AIzaSyC7rxDT3dOlCHWaAqJG-pdvjzGoiLqD8J4", "authDomain": "credit-shop-b9856.firebaseapp.com", "projectId": "credit-shop-b9856", "messagingSenderId": "1048973187308", "appId": "1:1048973187308:web:8cdb37c39e668355e96dc9", "measurementId": "G-0V4QQXKPEC"};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+// Local state
+let items = [];
+let filterType = 'all';
+let unsubscribe = null;
+
+// Helpers
+function escapeHtml(s){ return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function formatPhone(n){ n = (n||'').replace(/\\D/g,''); if(n.length===10) return '91'+n; if(n.startsWith('91')) return n; return n; }
+
+// UI refs
+const itemName = document.getElementById('itemName');
+const itemPrice = document.getElementById('itemPrice');
+const itemsList = document.getElementById('itemsList');
+const btnAddItem = document.getElementById('btnAddItem');
+const btnAddRecord = document.getElementById('btnAddRecord');
+const tableBody = document.getElementById('tableBody');
+const searchInput = document.getElementById('search');
+const autoMsgInput = document.getElementById('autoMsg');
+
+btnAddItem.addEventListener('click', ()=>{ addItem(); });
+itemPrice.addEventListener('keydown', (e)=>{ if(e.key==='Enter') addItem(); });
+
+// Firestore collection ref
+const colRef = collection(db, 'records');
+
+// Add item locally
+function addItem(){
+  const name = itemName.value.trim();
+  const price = Number(itemPrice.value);
+  if(!name) { alert('Enter item name'); return; }
+  if(!price || isNaN(price)) { alert('Enter valid price'); return; }
+  items.push({name, price});
+  itemName.value=''; itemPrice.value='';
+  renderItems();
+}
+
+function renderItems(){
+  if(items.length===0){ itemsList.innerHTML='No items added yet.'; return; }
+  itemsList.innerHTML = items.map((it,i)=>`${escapeHtml(it.name)} - ₹${it.price} <button class='small' onclick='removeItem(${i})'>X</button>`).join('<br>');
+}
+window.removeItem = function(i){ items.splice(i,1); renderItems(); };
+
+// Save record to Firestore
+btnAddRecord.addEventListener('click', async ()=>{
+  const name = document.getElementById('name').value.trim();
+  const datetime = document.getElementById('datetime').value || null;
+  const phone = formatPhone(document.getElementById('phone').value.trim());
+  const address = document.getElementById('address').value.trim();
+  const status = document.getElementById('status').value;
+
+  if(!name || items.length===0){ alert('Name and at least 1 item required'); return; }
+
+  const total = items.reduce((a,b)=>a+b.price,0);
+
+  try{
+    const docRef = await addDoc(colRef, {
+      name, items: items, total, datetime, phone, address, status, createdAt: serverTimestamp()
+    });
+    if(document.getElementById('autoSend').checked && phone){
+      const msg = makeMessage({name, items, total, datetime});
+      openSMS(phone, msg);
+    }
+    items = []; renderItems();
+    document.getElementById('name').value=''; document.getElementById('datetime').value=''; document.getElementById('phone').value=''; document.getElementById('address').value='';
+    alert('Saved to cloud (id: '+docRef.id+')');
+  }catch(err){
+    console.error(err); alert('Error saving: '+err.message);
+  }
+});
+
+// Real-time listener and render
+function startListener(){
+  if(unsubscribe) unsubscribe();
+  const q = query(colRef, orderBy('createdAt', 'desc'));
+  unsubscribe = onSnapshot(q, snapshot=>{
+    const docs = snapshot.docs.map(d=>({id:d.id, ...d.data()}));
+    renderList(docs);
+  }, err=>{ console.error('listen error', err); });
+}
+startListener();
+
+// Render table with filter/search
+function renderList(records){
+  const term = (searchInput.value||'').toLowerCase();
+  let data = (records||[]).filter(r => (r.name||'').toLowerCase().includes(term) );
+  if(filterType!=='all') data = data.filter(r=>r.status===filterType);
+  tableBody.innerHTML = '';
+  data.forEach(r=>{
+    const tr = document.createElement('tr');
+    const tdName = document.createElement('td'); tdName.innerText = r.name || ''; tr.appendChild(tdName);
+    const tdItems = document.createElement('td'); tdItems.innerHTML = (r.items||[]).map(i=>escapeHtml(i.name)+'(₹'+i.price+')').join('<br>'); tr.appendChild(tdItems);
+    const tdTotal = document.createElement('td'); tdTotal.innerText = '₹' + (r.total||0); tr.appendChild(tdTotal);
+    const tdDate = document.createElement('td'); tdDate.innerText = r.datetime || ''; tr.appendChild(tdDate);
+    const tdPhone = document.createElement('td'); tdPhone.innerText = r.phone || ''; tr.appendChild(tdPhone);
+    const tdAddress = document.createElement('td'); tdAddress.innerText = r.address || ''; tr.appendChild(tdAddress);
+    const tdStatus = document.createElement('td'); tdStatus.className = r.status || ''; tdStatus.innerText = (r.status||'').toUpperCase(); tr.appendChild(tdStatus);
+    const tdActions = document.createElement('td');
+    const btnDel = document.createElement('button'); btnDel.className='small'; btnDel.innerText='Delete'; btnDel.onclick = ()=> doDelete(String(r.id)); tdActions.appendChild(btnDel);
+    const btnPaid = document.createElement('button'); btnPaid.className='small'; btnPaid.innerText='Mark Paid'; btnPaid.onclick = ()=> doMarkPaid(String(r.id)); tdActions.appendChild(btnPaid);
+    const btnSMS = document.createElement('button'); btnSMS.className='small'; btnSMS.innerText='SMS'; btnSMS.onclick = ()=> doSMS(String(r.id)); tdActions.appendChild(btnSMS);
+    const btnWA = document.createElement('button'); btnWA.className='small'; btnWA.innerText='WA'; btnWA.onclick = ()=> doWA(String(r.id)); tdActions.appendChild(btnWA);
+    tr.appendChild(tdActions);
+    tableBody.appendChild(tr);
+  });
+}
+// Actions
+window.doDelete = async function(id){
+  if(!confirm('Delete this record?')) return;
+  await deleteDoc(doc(db, 'records', id));
+};
+
+window.doMarkPaid = async function(id){
+  const dRef = doc(db, 'records', id);
+  await updateDoc(dRef, { status: 'paid' });
+};
+
+window.doSMS = async function(id){
+  const dRef = doc(db, 'records', id);
+  const snap = await getDoc(dRef);
+  const rec = snap.exists()? snap.data() : null;
+  if(!rec || !rec.phone){ alert('No phone number'); return; }
+  const msg = makeMessage({name: rec.name, items: rec.items, total: rec.total, datetime: rec.datetime});
+  openSMS(rec.phone, msg);
+};
+
+window.doWA = async function(id){
+  const dRef = doc(db, 'records', id);
+  const snap = await getDoc(dRef);
+  const rec = snap.exists()? snap.data() : null;
+  if(!rec || !rec.phone){ alert('No phone number'); return; }
+  const msg = makeMessage({name: rec.name, items: rec.items, total: rec.total, datetime: rec.datetime});
+  openWA(rec.phone, msg);
+};
+
+// helper to make message
+function makeMessage(r){
+  const tpl = autoMsgInput.value || '';
+  const itemsText = (r.items||[]).map(i=>`${i.name}(₹${i.price})`).join(', ');
+  let date='', time='';
+  if(r.datetime){ const d = new Date(r.datetime); date = d.toLocaleDateString(); time = d.toLocaleTimeString(); }
+  return tpl.replace(/\\{\\{name\\}\\}/g, r.name).replace(/\\{\\{items\\}\\}/g, itemsText).replace(/\\{\\{date\\}\\}/g, date).replace(/\\{\\{time\\}\\}/g, time).replace(/\\{\\{total\\}\\}/g, r.total)
+             .replace(/\\{name\\}/g, r.name).replace(/\\{items\\}/g, itemsText).replace(/\\{date\\}/g, date).replace(/\\{time\\}/g, time).replace(/\\{total\\}/g, r.total);
+}
+
+// open SMS / WA
+function openSMS(phone,msg){
+  phone = formatPhone(phone);
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const body = encodeURIComponent(msg);
+  if(isIOS) window.location.href = `sms:${phone}&body=${body}`;
+  else window.location.href = `sms:${phone}?body=${body}`;
+}
+function openWA(phone,msg){
+  phone = formatPhone(phone);
+  const url = 'https://wa.me/' + phone + '?text=' + encodeURIComponent(msg);
+  window.open(url, '_blank');
+}
+
+function setFilter(f){ filterType = f; renderList([]); } // renderList will be triggered by snapshot
+
+function renderTable(){ /* no-op, snapshot drives UI */ }
+
+// start
+renderItems();
+</script>
+</body>
+</html>
