@@ -83,9 +83,24 @@
 </div>
 
 <script type="module">
+// Correct imports (modular SDK)
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-import {{ getFirestore, collection, addDoc, doc, updateDoc, deleteDoc, onSnapshot, query, orderBy, serverTimestamp, getDoc, getDocs, where }} from "https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore.js";
+import {
+  getFirestore, collection, addDoc, doc, updateDoc, deleteDoc,
+  onSnapshot, query, orderBy, serverTimestamp, getDoc
+} from "https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore.js";
 
+/* ---------- PASTE YOUR FIREBASE CONFIG FOR THE PROJECT YOU WANT TO USE ----------
+   Keep the config for your target project here. Do NOT expose sensitive server keys.
+   Example:
+const firebaseConfig = {
+  apiKey: "...",
+  authDomain: "...",
+  projectId: "...",
+  appId: "...",
+  measurementId: "..."
+};
+------------------------------------------------------------------------------ */
 const firebaseConfig = {"apiKey": "AIzaSyAq56T92flraSJGpRCK8VGxdsE1cacmknw", "authDomain": "credit-shop-80283.firebaseapp.com", "projectId": "credit-shop-80283", "messagingSenderId": "519014703446", "appId": "1:519014703446:web:28ce305660e19d2b9736f7", "measurementId": "G-TSFZ4EMN5F"};
 
 // Initialize Firebase
@@ -99,7 +114,7 @@ let unsubscribe = null;
 
 // Helpers
 function escapeHtml(s){ return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-function formatPhone(n){ n = (n||'').replace(/\\D/g,''); if(n.length===10) return '91'+n; if(n.startsWith('91')) return n; return n; }
+function formatPhone(n){ n = (n||'').replace(/\D/g,''); if(n.length===10) return '91'+n; if(n.startsWith('91')) return n; return n; }
 
 // UI refs
 const itemName = document.getElementById('itemName');
@@ -111,7 +126,7 @@ const tableBody = document.getElementById('tableBody');
 const searchInput = document.getElementById('search');
 const autoMsgInput = document.getElementById('autoMsg');
 
-btnAddItem.addEventListener('click', ()=>{ addItem(); });
+btnAddItem.addEventListener('click', addItem);
 itemPrice.addEventListener('keydown', (e)=>{ if(e.key==='Enter') addItem(); });
 
 // Firestore collection ref
@@ -232,8 +247,7 @@ function makeMessage(r){
   const itemsText = (r.items||[]).map(i=>`${i.name}(₹${i.price})`).join(', ');
   let date='', time='';
   if(r.datetime){ const d = new Date(r.datetime); date = d.toLocaleDateString(); time = d.toLocaleTimeString(); }
-  return tpl.replace(/{name}/g, r.name).replace(/{items}/g, itemsText).replace(/{date}/g, date).replace(/{time}/g, time).replace(/{total}/g, r.total)
-             .replace(/\\{name\\}/g, r.name).replace(/\\{items\\}/g, itemsText).replace(/\\{date\\}/g, date).replace(/\\{time\\}/g, time).replace(/\\{total\\}/g, r.total);
+  return tpl.replace(/{name}/g, r.name).replace(/{items}/g, itemsText).replace(/{date}/g, date).replace(/{time}/g, time).replace(/{total}/g, r.total);
 }
 
 // open SMS / WA
