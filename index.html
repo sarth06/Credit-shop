@@ -183,6 +183,8 @@ function startListener(){
   const q = query(colRef, orderBy('createdAt', 'desc'));
   unsubscribe = onSnapshot(q, snapshot=>{
     const docs = snapshot.docs.map(d=>({id:d.id, ...d.data()}));
+    window.latestDocs = docs;
+
     renderList(docs);
   }, err=>{ console.error('listen error', err); });
 }
@@ -247,7 +249,13 @@ function makeMessage(r){
   const itemsText = (r.items||[]).map(i=>`${i.name}(₹${i.price})`).join(', ');
   let date='', time='';
   if(r.datetime){ const d = new Date(r.datetime); date = d.toLocaleDateString(); time = d.toLocaleTimeString(); }
-  return tpl.replace(/{name}/g, r.name).replace(/{items}/g, itemsText).replace(/{date}/g, date).replace(/{time}/g, time).replace(/{total}/g, r.total);
+ return tpl
+  .replace(/{name}/g, r.name)
+  .replace(/{items}/g, itemsText)
+  .replace(/{date}/g, date)
+  .replace(/{time}/g, time)
+  .replace(/{total}/g, r.total);
+
 }
 
 // open SMS / WA
@@ -263,11 +271,17 @@ function openWA(phone,msg){
   const url = 'https://wa.me/' + phone + '?text=' + encodeURIComponent(msg);
   window.open(url, '_blank');
 }
+function setFilter(f){
+  filterType = f;
+  if (window.latestDocs) renderList(window.latestDocs);
+}
 
-function setFilter(f){ filterType = f; }
 // renderList will be triggered by snapshot
 
-function renderTable(){ /* no-op, snapshot drives UI */ }
+function renderTable(){
+  if (window.latestDocs) renderList(window.latestDocs);
+}
+
 
 // start
 renderItems();
