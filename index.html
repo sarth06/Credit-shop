@@ -83,7 +83,7 @@
 </div>
 
 <script type="module">
-import {{ initializeApp }} from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
 import {{ getFirestore, collection, addDoc, doc, updateDoc, deleteDoc, onSnapshot, query, orderBy, serverTimestamp, getDoc, getDocs, where }} from "https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore.js";
 
 const firebaseConfig = {"apiKey": "AIzaSyAq56T92flraSJGpRCK8VGxdsE1cacmknw", "authDomain": "credit-shop-80283.firebaseapp.com", "projectId": "credit-shop-80283", "messagingSenderId": "519014703446", "appId": "1:519014703446:web:28ce305660e19d2b9736f7", "measurementId": "G-TSFZ4EMN5F"};
@@ -232,7 +232,7 @@ function makeMessage(r){
   const itemsText = (r.items||[]).map(i=>`${i.name}(₹${i.price})`).join(', ');
   let date='', time='';
   if(r.datetime){ const d = new Date(r.datetime); date = d.toLocaleDateString(); time = d.toLocaleTimeString(); }
-  return tpl.replace(/\\{\\{name\\}\\}/g, r.name).replace(/\\{\\{items\\}\\}/g, itemsText).replace(/\\{\\{date\\}\\}/g, date).replace(/\\{\\{time\\}\\}/g, time).replace(/\\{\\{total\\}\\}/g, r.total)
+  return tpl.replace(/{name}/g, r.name).replace(/{items}/g, itemsText).replace(/{date}/g, date).replace(/{time}/g, time).replace(/{total}/g, r.total)
              .replace(/\\{name\\}/g, r.name).replace(/\\{items\\}/g, itemsText).replace(/\\{date\\}/g, date).replace(/\\{time\\}/g, time).replace(/\\{total\\}/g, r.total);
 }
 
@@ -250,7 +250,8 @@ function openWA(phone,msg){
   window.open(url, '_blank');
 }
 
-function setFilter(f){ filterType = f; renderList([]); } // renderList will be triggered by snapshot
+function setFilter(f){ filterType = f; }
+// renderList will be triggered by snapshot
 
 function renderTable(){ /* no-op, snapshot drives UI */ }
 
